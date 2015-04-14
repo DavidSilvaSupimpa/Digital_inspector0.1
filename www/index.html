@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html>
+<!--
+  * Copyright © 2012-2015, Intel Corporation. All rights reserved.
+  * Please see the included README.md file for license terms and conditions.
+  -->
+<head>
+    <title>Digital Inspector</title>
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+
+    <link rel="stylesheet" type="text/css" href="css/af.ui.css" />
+    <link rel="stylesheet" type="text/css" href="css/icons.css" />
+    <script type="text/javascript" charset="utf-8" src="js/appframework.ui.min.js"></script>
+    <!--AppFramework plugin for sliding side menu-->
+    <script type="text/javascript" charset="utf-8" src="js/af.slidemenu.js"></script>
+
+    <!-- phantom library, needed for XDK "legacy" container api calls -->
+    <script src="intelxdk.js"></script>
+    <!-- phantom library, needed for Cordova api calls -->
+    <script src="cordova.js"></script>
+    <!-- phantom library, needed for XDK "legacy" container CORS -->
+    <script src="xhr.js"></script>
+
+<!--
+  * The "meta viewport" tag (below) helps your app size appropriately to a device's ideal viewport.
+  * Note that Windows device viewports work better when initialized using the @viewport CSS rule.
+  * For a quick overview of "meta viewport" and @viewport, see this article:
+  *   http://webdesign.tutsplus.com/tutorials/htmlcss-tutorials/quick-tip-dont-forget-the-viewport-meta-tag
+  * To see how it works, try your app on a real device with and without a "meta viewport" tag.
+  * Additional useful references include:
+  *   http://www.quirksmode.org/mobile/viewports.html
+  *   http://www.quirksmode.org/mobile/metaviewport/devices.html
+  *   https://developer.apple.com/library/safari/documentation/AppleApplications/Reference/SafariHTMLRef/Articles/MetaTags.html
+-->
+
+    <!-- <meta name="viewport" content="width=device-width, minimum-scale=1, initial-scale=1"> 
+    <meta name="viewport" content="width=device-width, minimum-scale=1, initial-scale=1, user-scalable=no">-->
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes, minimum-scale=1, maximum-scale=2">
+
+    <style>
+    /* following three (cascaded) are equivalent to above three meta viewport statements */
+    /* see http://www.quirksmode.org/blog/archives/2014/05/html5_dev_conf.html */
+    /* see http://dev.w3.org/csswg/css-device-adapt/ */
+        @-ms-viewport { width: 100vw ; min-zoom: 100% ; zoom: 100% ; }          @viewport { width: 100vw ; min-zoom: 100% zoom: 100% ; }
+        @-ms-viewport { user-zoom: fixed ; min-zoom: 100% ; }                   @viewport { user-zoom: fixed ; min-zoom: 100% ; }
+        /*@-ms-viewport { user-zoom: zoom ; min-zoom: 100% ; max-zoom: 200% ; }   @viewport { user-zoom: zoom ; min-zoom: 100% ; max-zoom: 200% ; }*/
+    </style>
+
+<!-- See long explanation at the bottom of this file for info regarding placement of JS libraries. -->
+<!-- These library references (below) are just examples to give you the general idea... -->
+    <!-- <script src="lib/mc/hammer.js"></script> -->
+    <!-- <script src="lib/ft/fastclick.js"></script> -->
+    <!-- <script src="lib/jq/jquery.js"></script> -->
+    <!-- <script src="lib/af/jq.appframework.js"></script> -->
+    <!-- <script src="lib/af/appframework.ui.js"></script> -->
+
+    <!-- <link rel="stylesheet" href="lib/af/icons.css"> -->
+    <!-- <link rel="stylesheet" href="lib/af/af.ui.css"> -->
+<!--
+    <script>
+    // if you're using App Framework, you might want to also do this
+        $.ui.autoLaunch = false ;
+        // and then use $.ui.launch() as shown in the app.hideSplashScreen() function
+        // see https://github.com/01org/appframework/blob/master/documentation/detail/%24.ui.launch.md
+    </script>
+
+    <link rel="stylesheet" href="css/app.css">-->
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="css/estilo.css">
+</head>
+
+
+<body>
+    
+    <script>
+        var onDeviceReady=function(){                             // called when Cordova is ready
+           if( window.Cordova && navigator.splashscreen ) {     // Cordova API detected
+               $.ui.launch(); 
+               navigator.splashscreen.hide() ;                 // hide splash screen
+            }
+        } ;
+        document.addEventListener("deviceready", onDeviceReady, false) ;
+    </script>
+    
+    <script>   
+        $.ui.autoLaunch = false;
+        $.ui.animateHeaders = false;
+                
+        $(document).ready(function(){
+            $.ui.setSideMenuWidth('260px');
+            $.ui.launch();
+            
+            //Verificar se o Local Storage Ã© suportado pelo navegador 
+            //e obter o objeto, caso ele seja suportado. 
+            var db = getLocalStorage();
+
+            function getLocalStorage() {
+                try {
+                   if(window.localStorage ) return window.localStorage;            
+                }
+               catch (e){
+                  return undefined;
+               }
+            }
+            
+            //O Web SQL storage Ã© uma interface para um banco de dados relacional SQL. 
+            //O Web SQL utiliza o SQLite3 como a engine de banco de dados.
+            //Ã‰ suportado pelos navegadores Safari, Chrome e Opera. A primeira coisa 
+            //que precisamos fazer Ã© verificar se o navegador suporta o Web SQL Storage. 
+            //Segue abaixo a funÃ§Ã£o que verifica isso e que obtÃ©m o objeto de armazenamento.
+            function getopenDb() { 
+               try {
+                  if (window.openDatabase) {                    
+                    return window.openDatabase;                    
+                  }else {
+                    alert('No HTML5 support');
+                    return undefined;
+                  }
+              }
+              catch (e) {
+                 alert(e);
+                 return undefined;
+              }            
+            }
+            
+            //Criar a tabela
+            function createTable() {
+                var openDB = getopenDb();
+                if(!openDB){                
+                   return;               
+                }
+                else{
+                  db = openDB('mydatabase', '1.0', 'my db', 2*1024*1024);
+                  db.transaction(function (t) { 
+                      t.executeSql('CREATE TABLE IF NOT EXISTS minhatabela(id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, local TEXT NOT NULL, tipo TEXT NOT NULL, causa TEXT NOT NULL, diagnostico TEXT NOT NULL, reparo TEXT NOT NULL  );', [], null);               
+                      });
+                  selRows();
+                  return db;
+               }            
+            }
+            
+            var db = createTable();
+        
+            //Inserindo dados no Web SQL Storage
+                function insert(nome, local, tipo, causa, diagnostico, reparo) {
+                   if(!db){                
+                      return;                
+                   }
+                
+                  db.transaction(function (t) { 
+                      t.executeSql("INSERT INTO minhatabela('nome','local','tipo','causa','diagnostico','reparo') values('"+ nome + "' , '"+ local + "' , '"+ tipo + "' , '"+ causa + "' , '"+ diagnostico + "' , '"+ reparo + "');", [], null);
+                     
+                      alert("Dados Inserido!");
+                      selRows();
+                 });
+                }
+            
+            //select
+            function selRows() {
+    
+                var q = "select * from minhatabela";
+    
+               db.transaction(function (t) {
+                  t.executeSql(q, null, function (t, data) {
+                     var html = "<table><tr><td>ID</td><td>MODELO</td><td>LOCAL</td><td>TIPO/SINTOMA</td><td>CAUSA</td><td>DIAGNOSTICO</td><td>REPARO</td></tr>";
+
+                     for (var i = 0; i < data.rows.length; i++) {
+                         html += "<tr><td>" + data.rows.item(i).id + "</td><td>" + data.rows.item(i).nome + "</td><td>" + data.rows.item(i).local + "</td><td>" + data.rows.item(i).tipo + "</td><td>" + data.rows.item(i).causa + "</td><td>" + data.rows.item(i).diagnostico + "</td><td>" + data.rows.item(i).reparo + "</td><td>" +  "<span class='exclui' onclick='excluir("+data.rows.item(i).id+", "+data.rows.item(i).nome+", "+data.rows.item(i).local+", "+data.rows.item(i).tipo+", "+data.rows.item(i).causa+", "+data.rows.item(i).diagnostico+", "+data.rows.item(i).reparo+")' > - Excluir</span></tr>";
+                     }
+                     html += "</table>";
+                     var el = document.getElementById("mostra");
+                     el.innerHTML = html;
+                  });
+               }); 
+            }
+            
+            selRows();
+
+            
+            $('#inserir').on('click', function(){
+                
+                $modelo = $( "#modelo" ).val();
+                $local = $( "#local" ).val();
+                $tipo = $( "#tipo" ).val();
+                $causa = $( "#causa" ).val();
+                $diagnostico = $( "#diagnostico" ).val();
+                $reparo = $( "#reparo" ).val();
+                
+                insert($modelo, $local, $tipo, $causa, $diagnostico, $reparo);               
+                
+            });
+
+            function excluir(id, nome, local, tipo, causa, diagnostico, reparo) {
+                   if(!db){                
+                      return;                
+                   }
+                
+                  db.transaction(function (t) { 
+                      t.executeSql("DELETE FROM minhatabela WHERE id, nome, local, tipo, causa, diagnostico, reparo = "+id+", "+nome+", "+local+", "+tipo+", "+causa+", "+diagnostico+", "+reparo+" ", [], null);
+                     
+                      alert("Nome excluido!");
+
+                      selRows();
+
+                 });
+            }
+
+
+            
+        });
+    </script>
+    <style>
+        #mostra table tbody tr td {
+          padding: 5px  10px;
+		      font-size: 10px;
+        }
+        .box{
+           margin-top: 30px;
+        }
+        .box button{
+           width: 100%;
+          font-size: 20px;
+            background: #4848ff;
+            color: #fff;
+            border-radius: 3px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body> 
+<div id="afui">
+    
+    <!--Left Side Menu Navigation bar -->
+    <nav>
+        <ul class="list">
+            <li><a href="#page1" class="icon home">Cadastrar</a></li>
+            <li><a href="#page2" class="icon heart">Listar</a></li>
+        </ul>
+    </nav>
+    
+    <div id="content" style=""> 
+        
+    <!--Main View Pages-->
+        <div class="panel" title="Home" id="page1" data-footer="none" selected="true">
+            <header>
+                <a id="menubadge" onclick='$.ui.toggleSideMenu()' class='menuButton' style="float:left !important"></a>
+                <h1>Cadastrar</h1>
+            </header>
+            <!-- <div class="box">
+               <input type='text' name="nome" placeholder="Digite um nome" />
+            </div> -->
+
+            <select id="modelo" name="MODELO">
+                <option>MODELOS</option>
+                <option value="PC 709/S" id="modelo">PC 709/S</option>
+                <option value="PC 709 KB" id="modelo">PC 709 KB</option>
+                <option value="PC 713" id="modelo">PC 713</option>
+                <option value="PC 722" id="modelo">PC 722</option>
+                <option value="PC 203 TV" id="modelo">PC 203 TV</option>
+                <option value="PC 719" id="modelo">PC 719</option>
+            </select>
+
+            <select id="local" name="Local">
+                <option>LOCAL</option>
+                <option value="ALTO FALANTE" id="Local">ALTO FALANTE</option>
+                <option value="APLICATIVOS" id="Local">APLICATIVOS</option>
+                <option value="BATERIA" id="Local">BATERIA</option>
+                <option value="CÂMERA" id="Local">CÂMERA</option>
+                <option value="CONECTOR DC" id="Local">CONECTOR DC</option>
+                <option value="CONECTOR DE FONE" id="Local">CONECTOR DE FONE</option>
+                <option value="CONECTOR/ENTRADA SD" id="Local">CONECTOR/ENTRADA SD</option>
+                <option value="CONECTOR/ENTRADA USB" id="Local">CONECTOR/ENTRADA USB</option>
+                <option value="MICROFONE" id="Local">MICROFONE</option>
+                <option value="TOUCH" id="Local">TOUCH</option>
+                <option value="SISTEMA CORROMPIDO" id="Local">SISTEMA CORROMPIDO</option>
+                <option value="TELA LCD" id="Local">TELA LCD</option>
+                <option value="WI-FI" id="Local">WI-FI</option>
+                <option value="SOFTWARE" id="Local">SOFTWARE</option>
+                <option value="PLACA MÃE" id="Local">PLACA MÃE</option>
+                <option value="BOTÃO" id="Local">BOTÃO</option>
+                <option value="BACK CASE" id="Local">BACK CASE</option>
+                <option value="TOP COVER" id="Local">TOP COVER</option>
+                <option value="TV" id="Local">TV</option>
+                <option value="ANTENA" id="Local">ANTENA</option>
+            </select>
+
+            <select id="tipo" name="Tipo">
+                <option>TIPO/SINTOMAS</option>
+                <option value="COM RISCOS COLORIDOS" id="Tipo">COM RISCOS COLORIDOS</option>
+                <option value="COM RUÍDO" id="Tipo">COM RUÍDO</option>
+                <option value="COMPONENTE INTERNO SOLTO" id="Tipo">COMPONENTE INTERNO SOLTO</option>
+                <option value="EM CURTO" id="Tipo">EM CURTO</option>
+                <option value="ESTUFADA" id="Tipo">ESTUFADA</option>
+                <option value="FORA DA POSIÇÃO/DESLOCADA" id="Tipo">FORA DA POSIÇÃO/DESLOCADA</option>
+                <option value="FORA DA POSIÇÃO/DESLOCADA" id="Tipo">FORA DA POSIÇÃO/DESLOCADA</option>
+                <option value="IMAGEM RUIM" id="Tipo">IMAGEM RUIM</option>
+                <option value="MAU CONTATO" id="Tipo">MAU CONTATO</option>
+                <option value="TELA ESCURA" id="Tipo">TELA ESCURA</option>
+                <option value="NÃO CARREGA" id="Tipo">NÃO CARREGA</option>
+                <option value="NÃO CONECTA A INTERNET" id="Tipo">NÃO CONECTA A INTERNET</option>
+                <option value="NÃO FUNCIONA" id="Tipo">NÃO FUNCIONA</option>
+                <option value="NÃO GRAVA VOZ" id="Tipo">NÃO GRAVA VOZ</option>
+                <option value="NÃO INICIALIZA O SISTEMA" id="Tipo">NÃO INICIALIZA O SISTEMA</option>
+                <option value="NÃO LIGA" id="Tipo">NÃO LIGA</option>
+                <option value="NÃO RECONHECE REDE" id="Tipo">NÃO RECONHECE REDE</option>
+                <option value="PIXEL QUEIMADO" id="Tipo">PIXEL QUEIMADO</option>
+                <option value="QUEBRADO/TRINCADO" id="Tipo">QUEBRADO/TRINCADO</option>
+                <option value="SEM IMAGEM" id="Tipo">SEM IMAGEM</option>
+                <option value="SEM SOM" id="Tipo">SEM SOM</option>
+                <option value="SOM BAIXO" id="Tipo">SOM BAIXO</option>
+                <option value="SISTEMA CORROMPIDO" id="Tipo">SISTEMA CORROMPIDO</option>
+                <option value="CARTÃO SD PRESO/NÃO TRAVA" id="Tipo">CARTÃO SD PRESO/NÃO TRAVA</option>
+                <option value="CONECTOR USB" id="Tipo">CONECTOR USB</option>
+                <option value="CAMERA PAROU" id="Tipo">CAMERA PAROU</option>
+                <option value="CAMERA TRAVANDO" id="Tipo">CAMERA TRAVANDO</option>
+                <option value="PARAFUSO ROÇADO" id="Tipo">PARAFUSO ROÇADO</option>
+                <option value="NÃO ENCONTRA TV DIGITAL" id="Tipo">NÃO ENCONTRA TV DIGITAL</option>
+                <option value="NÃO ABRE APP TV" id="Tipo">NÃO ABRE APP TV</option>
+            </select>
+
+            <select id="causa" name="Causa">
+                <option>CAUSA</option>
+                <option value="ALTO FALANTE ABERTO/ALTERADO" id="Causa">ALTO FALANTE ABERTO/ALTERADO</option>
+                <option value="ANTENA INTERNA FORA DE POSIÇÃO" id="Causa">ANTENA INTERNA FORA DE POSIÇÃO</option>
+                <option value="BATERIA NÃO SEGURA CARGA" id="Causa">BATERIA NÃO SEGURA CARGA</option>
+                <option value="BOTÃO EM CURTO" id="Causa">BOTÃO EM CURTO</option>
+                <option value="CABO FLAT SOLTO/MAL ENCAIXADO" id="Causa">CABO FLAT SOLTO/MAL ENCAIXADO</option>
+                <option value="CAMERA INOPERANTE/ALTERADA" id="Causa">CAMERA INOPERANTE/ALTERADA</option>
+                <option value="CAPACITOR ABERTO/EM CURTO" id="Causa">CAPACITOR ABERTO/EM CURTO</option>
+                <option value="CIRCUITO DE ALIMENTAÇÃO DC" id="Causa">CIRCUITO DE ALIMENTAÇÃO DC</option>
+                <option value="CIRCUITO DE ILUMINAÇÃO DA TELA" id="Causa">CIRCUITO DE ILUMINAÇÃO DA TELA</option>
+                <option value="CIRCUITO INTEGRADO" id="Causa">CIRCUITO INTEGRADO</option>
+                <option value="CIRCUITO WIFI" id="Causa">CIRCUITO WIFI</option>
+                <option value="CONECTOR SOLTO/QUEBRADO" id="Causa">CONECTOR SOLTO/QUEBRADO</option>
+                <option value="CRISTAL DE CLOCK" id="Causa">CRISTAL DE CLOCK</option>
+                <option value="CURTO DE SOLDA" id="Causa">CURTO DE SOLDA</option>
+                <option value="DIODO ABERTO/CURTO" id="Causa">DIODO ABERTO/CURTO</option>
+                <option value="FALHA NO PROCESSO PRODUTIVO" id="Causa">FALHA NO PROCESSO PRODUTIVO</option>
+                <option value="FIO SOLTO" id="Causa">FIO SOLTO</option>
+                <option value="MICROFONE ABERTO/EM CURTO" id="Causa">MICROFONE ABERTO/EM CURTO</option>
+                <option value="TOUCH INOPERANTE" id="Causa">TOUCH INOPERANTE</option>
+                <option value="RESISTOR ABERTO/ALTERADO" id="Causa">RESISTOR ABERTO/ALTERADO</option>
+                <option value="SISTEMA OPERACIONAL CORROMPIDO" id="Causa">SISTEMA OPERACIONAL CORROMPIDO</option>
+                <option value="SOLDA FRIA" id="Causa">SOLDA FRIA</option>
+                <option value="TELA LCD COM FALHAS EM PIXEL" id="Causa">TELA LCD COM FALHAS EM PIXEL</option>
+                <option value="TELA LCD INOPERANTE/ALTERADA" id="Causa">TELA LCD INOPERANTE/ALTERADA</option>
+                <option value="TRANSISTOR ABERTO/EM CURTO" id="Causa">TRANSISTOR ABERTO/EM CURTO</option>
+                <option value="TRILHA ABERTA" id="Causa">TRILHA ABERTA</option>
+                <option value="PCB SEM CONDIÇÕES TÉCNICAS DE REPARO" id="Causa">PCB SEM CONDIÇÕES TÉCNICAS DE REPARO</option>
+                <option value="FALTA COMPONENTE" id="Causa">FALTA COMPONENTE</option>
+                <option value="CABO RF LINE DANIFICADO" id="Causa">CABO RF LINE DANIFICADO</option>
+            </select>
+
+            <select id="diagnostico" name="Diagnostico">
+                <option>TIPO DE DIAGNÓSTICO</option>
+                <option  value="PROCESSO/MONTAGEM">PROCESSO/MONTAGEM</option>
+                <option  value="SMT">SMT</option>
+                <option  value="FORNECEDOR/SDK" >FORNECEDOR/SDK</option>
+                <option  value="FORNECEDOR PLACA" >FORNECEDOR PLACA</option>
+            </select>
+
+            <select id="reparo" name="Reparo">
+                <option>REPARO</option>
+                <option value="AJUSTE NA FIXAÇÃO DE COMPONETE" id="Reparo">AJUSTE NA FIXAÇÃO DE COMPONETE</option>
+                <option value="REALIZAR TESTE FUNCIONAL" id="Reparo">REALIZAR TESTE FUNCIONAL</option>
+                <option value="RECONEXÃO DO CABO FLAT" id="Reparo">RECONEXÃO DO CABO FLAT</option>
+                <option value="RECUPERAÇÃO DA TRILHA" id="Reparo">RECUPERAÇÃO DA TRILHA</option>
+                <option value="RECUPERAÇÃO DE COMPONENTE" id="Reparo">RECUPERAÇÃO DE COMPONENTE</option>
+                <option value="REINSTALÇÃO DO SISTEMA" id="Reparo">REINSTALÇÃO DO SISTEMA</option>
+                <option value="REMOÇÃO DO CURTO" id="Reparo">REMOÇÃO DO CURTO</option>
+                <option value="RESSOLDAGEM" id="Reparo">RESSOLDAGEM</option>
+                <option value="SUBSTITUIÇÃO DE COMPONENTE" id="Reparo">SUBSTITUIÇÃO DE COMPONENTE</option>
+                <option value="SUBSTITUIÇÃO DA TELA LCD" id="Reparo">SUBSTITUIÇÃO DA TELA LCD</option>
+                <option value="SUBSTITUIÇÃO DA PCB WIFI" id="Reparo">SUBSTITUIÇÃO DA PCB WIFI</option>
+                <option value="SUBSTITUIÇÃO DE BOTÕES" id="Reparo">SUBSTITUIÇÃO DE BOTÕES</option>
+                <option value="SUBSTITUIÇÃO DE TOUCH" id="Reparo">SUBSTITUIÇÃO DE TOUCH</option>
+                <option value="SUBSTITUIÇÃO DA PLACA MÃE" id="Reparo">SUBSTITUIÇÃO DA PLACA MÃE</option>
+                <option value="SUBSTITUIÇÃO DA BATERIA" id="Reparo">SUBSTITUIÇÃO DA BATERIA</option>
+                <option value="SUBSTITUIÇÃO DA MOLDURA" id="Reparo">SUBSTITUIÇÃO DA MOLDURA</option>
+                <option value="SUBSTITUIÇÃO DO RF LINE" id="Reparo">SUBSTITUIÇÃO DO RF LINE</option>
+                <option value="SUBSTITUIÇÃO DE PARAFUSO" id="Reparo">SUBSTITUIÇÃO DE PARAFUSO</option>
+                <option value="SUBSTITUIÇÃO DA CAMERA" id="Reparo">SUBSTITUIÇÃO DA CAMERA</option>
+            </select>
+
+            <div class="box">
+               <button id="inserir">Inserir</button>
+            </div>
+        </div>
+        
+        <div class="panel" title="Favorites" id="page2" data-footer="none">
+            
+            <!-- <div class="box">
+               <button id="excluir">Excluir</button>
+            </div> -->
+
+            <header>
+                <a id="menubadge" onclick='$.ui.toggleSideMenu()' class='menuButton' style="float:left !important"></a>
+                <h1>Listar</h1>
+            </header>
+            <div id='mostra'></div>
+            <!-- <div class="box">
+               <button id="apagar">Apagar</button>
+            </div> -->
+        </div>
+        
+        
+    </div>
+</div>
+
+<!-- IMPORTANT: Do not include a weinre script tag as part of your release builds! -->
+<!-- Place your remote debugging (weinre) script URL from the Test tab here, if it does not work below -->
+    <!-- <script src="http://debug-software.intel.com/target/target-script-min.js#insertabiglongfunkynumberfromthexdkstesttab"></script> -->
+
+    <!-- See <head> section above for additional JS libraries loaded as part of this application. -->
+
+<!--
+  * cordova.js is a phantom lib for "Cordova HTML5 web app," it does nothing in a "Standard HTML5 web app"
+  * Seeing a "Failed to load resource: net::ERR_FILE_NOT_FOUND" message caused by this "cordova.js" script?
+  * The cordova.js script is required if you convert your "Standard HTML5" project into a "Cordova" project.
+  * You can safely ignore the error or comment out this line if you will not be developing a Cordova app.
+-->
+    <script src="cordova.js" id="xdkJScordova_"></script>
+
+    <script src="js/app.js"></script>           <!-- for your event code, see README and file comments for details -->
+    <script src="js/init-app.js"></script>      <!-- for your init code, see README and file comments for details -->
+    <script src="xdk/init-dev.js"></script>     <!-- normalizes device and document ready events, see file for details -->
+
+<!-- IMPORTANT: Do not include a weinre script tag as part of your release builds! -->
+<!-- Place your remote debugging (weinre) script URL from the Test tab here, if it does not work above -->
+    <!-- <script src="http://debug-software.intel.com/target/target-script-min.js#insertabiglongfunkynumberfromthexdkstesttab"></script> -->
+</body>
+
+<!--
+    Recommended JavaScript library load order for hybrid Cordova apps:
+
+    * "Device-Independent" JavaScript libraries.
+    * optional: weinre debug script tag for remote console debug (see notes).
+    * Intel XDK device JavaScript library.
+    * Cordova/PhoneGap device JavaScript library.
+    * "Device-Dependent" JavaScript libraries.
+    * Application JavaScript <script> tags and libraries.
+    * optional: weinre debug script tag for remote console debug (see notes).
+
+    In complex projects, the JavaScript load order is important. You must insure that the underlying
+    device API native code finishes its init, which can take longer than the webview init...
+
+    VERY IMPORTANT: notice that all of the libraries used in this project are located within the app's
+    local directories, which means they will get bundled with the app. They are NOT being pulled in
+    over the net. In most cases, this is what you should be doing when you build a hybrid mobile app.
+    This insures that you always use the JS code that you debugged against AND that you are not requiring
+    a data connection (network connection) to get the app started. If your app startup required a data
+    connection to initialize and start interaction with the user, lack of a reliable network connection
+    could be disasterous. Not to mention it generally results in a slower load time. Loading locally is
+  is much friendlier to your end user's data plan and battery.  :-)
+
+    NOTE: do not use a directory prefix with intelxdk.js or cordova.js - they are inserted automatically
+    by the build system, emulator and other tools and are assumed to be in the index.html source directory.
+    You will not find these JS files anywhere in your project, they are "phantom" libraries. If you do see
+    copies of these files as part of your project they should be removed to avoid confusing the Intel XDK.
+
+    When building a Cordova app (e.g., "Cordova Hybrid App") you can omit references to the
+    "intelxdk.js" and "xhr.js" script files. It does not hurt to keep them, but they are not used in
+    the Cordova environment, they are only needed for the "legacy" Intel XDK build systems.
+    (In the case of the Cordova build system, the Cordova and Intel XDK apis are included as plugins
+    and the CORS configuration is specified as a parameter in the build settings.)
+
+    LIBRARY NOTE: If you are using a large number of JavaScript libraries, especially third-party libraries
+    (like jQuery, {{ mustache }}, Underscore, etc.) that are "independent" of the device APIs provided
+    by the Intel XDK and Cordova libraries - and are independent of your application - your
+    app initialization will be most successful if you load these libraries BEFORE the Cordova and
+    Intel XDK libraries, in the <head> section of your index.html file. Obviously, any code that depends
+    on the Cordova or Intel XDK library APIs must be loaded AFTER the intelxdk.js and cordova.js libraries.
+
+    Libraries that are "independent" of the device APIs are libraries that you could use in a desktop
+    browser in a normal web page or web app. "Dependent" libraries are, most likely, your own code
+    that you've written specifically to work with the Cordova or Intel XDK device APIs. In some cases,
+    if your device-dependent code requires access to device-independent code to get started, you may
+    have to use something like CommonJS to force the device-dependent code to wait for the device-
+    independent code to initialize, otherwise you may have trouble getting your app started.
+
+    Because of this added dependency on the underlying native code (device) initialization, you should
+    not use the "document ready" event to start your application. You should wait for the "device ready"
+    event before you begin your application (if it uses any device APIs); in practice, it is best to wait
+    for both. (See the init-dev.js file in this template for an example of how to do this, it generates
+  a custom "app.Ready" event that you can trigger off of and just forget about the other events.)
+
+    NOTE: *any* library that redefines addEventListener() or fiddles with outstanding events may
+    interfere with capturing the "device ready" event and should, therefore, be placed *BEFORE*
+    the Cordova and Intel XDK libraries in the load order.
+
+  ALSO: if you use weinre for debugging (ala the Test tab or your own), you may have to experiment with
+  the placement of the weinre script. Some recommended locations are shown within. If these locations
+  do not work, you may have to experiment. The optimum placement can be app-specific, primarily as a
+  function of the included JavaScript libraries and your initialization.
+-->
+
+</html>
